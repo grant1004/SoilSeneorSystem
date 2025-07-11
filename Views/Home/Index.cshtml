@@ -1,0 +1,140 @@
+﻿<!-- Views/Home/Index.cshtml -->
+@{
+    ViewData["Title"] = "土壤濕度監控";
+}
+
+<div class="text-center">
+    <h1 class="display-4">土壤濕度監控系統
+        <button id="waterButton" class="btn btn-primary">澆水</button>
+    </h1>
+    
+    <div class="card mt-4">
+        <div class="card-body">
+            <h5 class="card-title">即時數據</h5>
+            <p class="card-text">電壓: <span id="voltage">--</span> V</p>
+            <p class="card-text">濕度: <span id="moisture">--</span> %</p>
+            <p class="card-text">最後更新時間: <span id="timestamp">--</span></p>
+        </div>
+    </div>
+
+    <!-- 添加圖表容器 -->
+    <div class="card mt-4">
+        <div class="card-body">
+            <h5 class="card-title">濕度歷史趨勢</h5>
+            <canvas id="moistureChart"></canvas>
+        </div>
+    </div>
+
+</div>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/moment@2.29.4/moment.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@1.0.1/dist/chartjs-adapter-moment.min.js"></script>
+    <script>
+
+        // 初始化圖表數據
+        const maxDataPoints = 8640; // 1day => 1440 分鐘 
+        const moistureData = {
+            labels: [],
+            datasets: [{
+                label: '濕度 (%)',
+                data: [],
+                borderColor: 'rgb(75, 192, 192)',
+                tension: 0.1
+            }]
+        };
+
+        // 創建圖表
+        const ctx = document.getElementById('moistureChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: moistureData,
+            options: {
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'minute',
+                            displayFormats: {
+                                minute: 'HH:mm'
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: '時間'
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: '濕度 (%)'
+                        }
+                    }
+                },
+                animation: false,
+                responsive: true
+            }
+        });
+
+        function updateData() {
+            fetch('/Home/GetData')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('voltage').textContent = data.voltage.toFixed(4);
+                    document.getElementById('moisture').textContent = data.moisture.toFixed(2);
+                    document.getElementById('timestamp').textContent =  new Date(data.timestamp * 1000).toLocaleString();
+                    // 更新圖表
+                    const timestamp = new Date(data.timestamp * 1000);
+
+                    // 每1分鐘添加一個數據點 10s * 1000 
+                    if (moistureData.labels.length === 0 ||
+                        timestamp - new Date(moistureData.labels[moistureData.labels.length - 1]) >= 10000) {
+
+                        moistureData.labels.push(timestamp);
+                        moistureData.datasets[0].data.push(data.moisture);
+
+                        if (moistureData.labels.length > maxDataPoints) {
+                            moistureData.labels.shift();
+                            moistureData.datasets[0].data.shift();
+                        }
+
+                        chart.update();
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        
+        
+
+        // 每秒更新一次數據
+        setInterval(updateData, 1000);
+        updateData();  // 立即更新一次
+    </script>
+    <script>
+        $(document).ready(function () {
+            $("#waterButton").click(function () {
+                $(this).prop('disabled', true);
+
+                $.post('/Home/WaterPlant', function (result) {
+                    if (result.success) {
+                        alert('澆水成功');
+                    } else {
+                        alert('澆水失敗');
+                    }
+                })
+                    .fail(function () {
+                        alert('系統錯誤');
+                    })
+                    .always(function () {
+                        setTimeout(function () {
+                            $("#waterButton").prop('disabled', false);
+                        }, 5000);  // 5秒後可以再次點擊
+                    });
+            });
+        });
+    </script>
+}
