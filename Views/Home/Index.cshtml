@@ -17,6 +17,28 @@
         </div>
     </div>
 
+    <!-- 自動澆水控制 -->
+    <div class="card mt-4">
+        <div class="card-body">
+            <h5 class="card-title">自動澆水設定</h5>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="autoWateringSwitch">
+                        <label class="form-check-label" for="autoWateringSwitch">
+                            啟用自動澆水 (濕度 < 30%)
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div id="autoWateringStatus" class="text-muted">
+                        <small>載入中...</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 添加圖表容器 -->
     <div class="card mt-4">
         <div class="card-body">
@@ -163,6 +185,63 @@
                 });
         }
 
+        // 更新自動澆水設定
+        function updateAutoWateringSettings() {
+            fetch('/Home/GetAutoWateringSettings')
+                .then(response => response.json())
+                .then(settings => {
+                    document.getElementById('autoWateringSwitch').checked = settings.enabled;
+                    
+                    let statusText = settings.enabled ? '🟢 已啟用' : '⚪ 已停用';
+                    
+                    if (settings.enabled) {
+                        const nextAvailable = new Date(settings.nextAvailableTime);
+                        const now = new Date();
+                        
+                        if (nextAvailable > now) {
+                            const minutesLeft = Math.ceil((nextAvailable - now) / (1000 * 60));
+                            statusText += ` (冷卻中，還需 ${minutesLeft} 分鐘)`;
+                        } else {
+                            statusText += ' (待機中)';
+                        }
+                    }
+                    
+                    document.getElementById('autoWateringStatus').innerHTML = `<small>${statusText}</small>`;
+                })
+                .catch(error => {
+                    console.error('Error fetching auto watering settings:', error);
+                    document.getElementById('autoWateringStatus').innerHTML = '<small class="text-danger">載入設定失敗</small>';
+                });
+        }
+
+        // 設定自動澆水開關
+        function setAutoWatering(enabled) {
+            fetch('/Home/SetAutoWatering', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ enabled: enabled })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    console.log('自動澆水設定已更新:', result.enabled);
+                    updateAutoWateringSettings();
+                } else {
+                    alert('設定失敗');
+                    // 恢復開關狀態
+                    document.getElementById('autoWateringSwitch').checked = !enabled;
+                }
+            })
+            .catch(error => {
+                console.error('Error setting auto watering:', error);
+                alert('設定錯誤');
+                // 恢復開關狀態
+                document.getElementById('autoWateringSwitch').checked = !enabled;
+            });
+        }
+
         // 每5秒更新一次數據
         setInterval(updateData, 5000);
         updateData();  // 立即更新一次
@@ -170,6 +249,10 @@
         // 每10秒更新一次澆水記錄
         setInterval(updateWateringRecords, 10000);
         updateWateringRecords();  // 立即更新一次
+        
+        // 每30秒更新一次自動澆水設定
+        setInterval(updateAutoWateringSettings, 30000);
+        updateAutoWateringSettings();  // 立即更新一次
     </script>
     <script>
         $(document).ready(function () {
@@ -193,6 +276,12 @@
                             $("#waterButton").prop('disabled', false);
                         }, 5000);  // 5秒後可以再次點擊
                     });
+            });
+            
+            // 自動澆水開關事件
+            $("#autoWateringSwitch").change(function () {
+                const enabled = $(this).prop('checked');
+                setAutoWatering(enabled);
             });
         });
     </script>

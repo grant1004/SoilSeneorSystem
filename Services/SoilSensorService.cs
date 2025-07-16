@@ -12,6 +12,10 @@ namespace SoilSensorCapture.Services
         private readonly string _gpioControlUrl;
         private readonly List<WateringRecord> _wateringRecords;
         private SoilData _lastSoilData;
+        private bool _autoWateringEnabled = false;
+        private DateTime _lastAutoWateringTime = DateTime.MinValue;
+        private readonly float _moistureThreshold = 30.0f; // 30% 濕度閾值
+        private readonly int _autoWateringCooldownMinutes = 30; // 30分鐘冷卻時間
 
         public SoilSensorService(IConfiguration configuration)
         {
@@ -36,6 +40,10 @@ namespace SoilSensorCapture.Services
                 if (currentData != null)
                 {
                     CheckForWateringActivity(currentData);
+                    
+                    // 檢查是否需要自動澆水
+                    await CheckAutoWateringAsync(currentData);
+                    
                     _lastSoilData = currentData;
                 }
                 
@@ -157,6 +165,107 @@ namespace SoilSensorCapture.Services
                     Debug.WriteLine($"檢測到澆水行為: 濕度從 {_lastSoilData.Moisture}% 增加到 {currentData.Moisture}%");
                 }
             }
+        }
+
+        // 檢查自動澆水
+        private async Task CheckAutoWateringAsync(SoilData currentData)
+        {
+            if (!_autoWateringEnabled) return;
+            
+            // 檢查濕度是否低於閾值
+            if (currentData.Moisture >= _moistureThreshold) return;
+            
+            // 檢查冷卻時間
+            var timeSinceLastWatering = DateTime.Now - _lastAutoWateringTime;
+            if (timeSinceLastWatering < TimeSpan.FromMinutes(_autoWateringCooldownMinutes))
+            {
+                Debug.WriteLine($"自動澆水冷卻中，還需等待 {_autoWateringCooldownMinutes - timeSinceLastWatering.TotalMinutes:F1} 分鐘");
+                return;
+            }
+            
+            Debug.WriteLine($"觸發自動澆水: 濕度 {currentData.Moisture}% < {_moistureThreshold}%");
+            
+            try
+            {
+                // 執行自動澆水
+                var success = await PerformAutoWateringAsync(currentData.Moisture);
+                
+                if (success)
+                {
+                    _lastAutoWateringTime = DateTime.Now;
+                    Debug.WriteLine($"自動澆水成功，下次可澆水時間: {_lastAutoWateringTime.AddMinutes(_autoWateringCooldownMinutes)}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"自動澆水錯誤: {ex.Message}");
+            }
+        }
+
+        // 執行自動澆水
+        private async Task<bool> PerformAutoWateringAsync(float beforeMoisture)
+        {
+            try
+            {
+                // 開啟水閥
+                Debug.WriteLine("自動澆水: 開啟水閥");
+                await ControlGPIOAsync(true);
+
+                // 等待1秒
+                await Task.Delay(1000);
+
+                // 關閉水閥
+                var result = await ControlGPIOAsync(false);
+                
+                // 記錄自動澆水
+                if (result)
+                {
+                    var wateringRecord = new WateringRecord
+                    {
+                        WateringTime = DateTime.Now,
+                        MoistureBefore = beforeMoisture,
+                        MoistureAfter = 0, // 將在下次讀取時更新
+                        MoistureChange = 0,
+                        Type = WateringType.Automatic
+                    };
+                    
+                    _wateringRecords.Add(wateringRecord);
+                    Debug.WriteLine($"記錄自動澆水: {wateringRecord.WateringTime}");
+                }
+                
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"自動澆水執行錯誤: {ex.Message}");
+                return false;
+            }
+        }
+
+        // 設定自動澆水狀態
+        public void SetAutoWateringEnabled(bool enabled)
+        {
+            _autoWateringEnabled = enabled;
+            Debug.WriteLine($"自動澆水功能: {(enabled ? "開啟" : "關閉")}");
+        }
+
+        // 取得自動澆水狀態
+        public bool GetAutoWateringEnabled()
+        {
+            return _autoWateringEnabled;
+        }
+
+        // 取得自動澆水設定資訊
+        public object GetAutoWateringSettings()
+        {
+            return new
+            {
+                enabled = _autoWateringEnabled,
+                moistureThreshold = _moistureThreshold,
+                cooldownMinutes = _autoWateringCooldownMinutes,
+                lastAutoWateringTime = _lastAutoWateringTime,
+                nextAvailableTime = _lastAutoWateringTime.AddMinutes(_autoWateringCooldownMinutes)
+            };
         }
 
         // 取得澆水記錄

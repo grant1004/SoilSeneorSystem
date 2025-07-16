@@ -36,4 +36,23 @@ public class HomeController : Controller
         return Json(records);
     }
 
+    [HttpPost]
+    public IActionResult SetAutoWatering([FromBody] AutoWateringRequest request)
+    {
+        _sensorService.SetAutoWateringEnabled(request.enabled);
+        return Json(new { success = true, enabled = request.enabled });
+    }
+
+    [HttpGet]
+    public IActionResult GetAutoWateringSettings()
+    {
+        var settings = _sensorService.GetAutoWateringSettings();
+        return Json(settings);
+    }
+
+    public class AutoWateringRequest
+    {
+        public bool enabled { get; set; }
+    }
+
 }
