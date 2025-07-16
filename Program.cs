@@ -4,9 +4,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
-builder.Services.AddScoped<SoilSensorService>();
+builder.Services.AddSingleton<SoilSensorService>();
 
-// 讀取 Railway 提供的 PORT 環境變數，如果沒有則使用預設值 5000
+// 讀嚙踝蕭 Railway 嚙踝蕭嚙諸迎蕭 PORT 嚙踝蕭嚙踝蕭嚙豌數，嚙緘嚙瘦嚙磅嚙踝蕭嚙篁嚙誕用預嚙稽嚙踝蕭 5000
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 

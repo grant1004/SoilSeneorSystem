@@ -122,9 +122,11 @@
 
         // 更新澆水記錄
         function updateWateringRecords() {
+            console.log('正在更新澆水記錄...');
             fetch('/Home/GetWateringRecords')
                 .then(response => response.json())
                 .then(records => {
+                    console.log('取得澆水記錄:', records);
                     const recordsContainer = document.getElementById('wateringRecords');
                     
                     if (records.length === 0) {
