@@ -10,10 +10,13 @@ namespace SoilSensorCapture.Services
         private readonly HttpClient _httpClient;
         private readonly string _apiUrl;
         private readonly string _gpioControlUrl;
+        private readonly List<WateringRecord> _wateringRecords;
+        private SoilData _lastSoilData;
 
         public SoilSensorService(IConfiguration configuration)
         {
             _httpClient = new HttpClient();
+            _wateringRecords = new List<WateringRecord>();
 
             // 使用主機名稱而不是 IP
             var baseUrl = configuration["SoilSensor:BaseUrl"] ?? "http://soil-sensor-pi.local:8080";
@@ -27,7 +30,16 @@ namespace SoilSensorCapture.Services
             {
                 var response = await _httpClient.GetAsync(_apiUrl);
                 response.EnsureSuccessStatusCode();
-                return await response.Content.ReadFromJsonAsync<SoilData>();
+                var currentData = await response.Content.ReadFromJsonAsync<SoilData>();
+                
+                // 檢測澆水行為
+                if (currentData != null)
+                {
+                    CheckForWateringActivity(currentData);
+                    _lastSoilData = currentData;
+                }
+                
+                return currentData;
             }
             catch (Exception ex)
             {
@@ -66,6 +78,9 @@ namespace SoilSensorCapture.Services
         {
             try
             {
+                // 記錄澆水前的濕度
+                var beforeMoisture = _lastSoilData?.Moisture ?? 0;
+                
                 // 開啟水閥
                 Debug.WriteLine($"開啟水閥");
                 await ControlGPIOAsync(true);
@@ -74,13 +89,83 @@ namespace SoilSensorCapture.Services
                 await Task.Delay(1000);
 
                 // 關閉水閥
-                return await ControlGPIOAsync(false);
+                var result = await ControlGPIOAsync(false);
+                
+                // 記錄手動澆水
+                if (result)
+                {
+                    var wateringRecord = new WateringRecord
+                    {
+                        WateringTime = DateTime.Now,
+                        MoistureBefore = beforeMoisture,
+                        MoistureAfter = 0, // 將在下次讀取時更新
+                        MoistureChange = 0,
+                        Type = WateringType.Manual
+                    };
+                    
+                    _wateringRecords.Add(wateringRecord);
+                    Debug.WriteLine($"記錄手動澆水: {wateringRecord.WateringTime}");
+                }
+                
+                return result;
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Watering Error: {ex.Message}");
                 return false;
             }
+        }
+
+        // 檢測澆水活動
+        private void CheckForWateringActivity(SoilData currentData)
+        {
+            if (_lastSoilData == null) return;
+            
+            var moistureChange = currentData.Moisture - _lastSoilData.Moisture;
+            const float wateringThreshold = 10.0f; // 濕度變化閾值
+            
+            // 如果濕度大幅增加，判定為澆水行為
+            if (moistureChange >= wateringThreshold)
+            {
+                // 檢查是否是手動澆水後的更新
+                var lastManualWatering = _wateringRecords
+                    .Where(r => r.Type == WateringType.Manual && r.MoistureAfter == 0)
+                    .OrderByDescending(r => r.WateringTime)
+                    .FirstOrDefault();
+                
+                if (lastManualWatering != null && 
+                    DateTime.Now - lastManualWatering.WateringTime <= TimeSpan.FromMinutes(5))
+                {
+                    // 更新手動澆水記錄
+                    lastManualWatering.MoistureAfter = currentData.Moisture;
+                    lastManualWatering.MoistureChange = moistureChange;
+                    Debug.WriteLine($"更新手動澆水記錄: 濕度變化 {moistureChange}%");
+                }
+                else
+                {
+                    // 新增檢測到的澆水記錄
+                    var wateringRecord = new WateringRecord
+                    {
+                        WateringTime = DateTime.Now,
+                        MoistureBefore = _lastSoilData.Moisture,
+                        MoistureAfter = currentData.Moisture,
+                        MoistureChange = moistureChange,
+                        Type = WateringType.Detected
+                    };
+                    
+                    _wateringRecords.Add(wateringRecord);
+                    Debug.WriteLine($"檢測到澆水行為: 濕度從 {_lastSoilData.Moisture}% 增加到 {currentData.Moisture}%");
+                }
+            }
+        }
+
+        // 取得澆水記錄
+        public List<WateringRecord> GetWateringRecords()
+        {
+            return _wateringRecords
+                .OrderByDescending(r => r.WateringTime)
+                .Take(50) // 只返回最近50筆記錄
+                .ToList();
         }
 
     }

@@ -29,4 +29,11 @@ public class HomeController : Controller
         return Json( new { success });
     }
 
+    [HttpGet]
+    public IActionResult GetWateringRecords()
+    {
+        var records = _sensorService.GetWateringRecords();
+        return Json(records);
+    }
+
 }
