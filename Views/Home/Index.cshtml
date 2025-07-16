@@ -99,9 +99,9 @@
                     // 更新圖表
                     const timestamp = new Date(data.timestamp * 1000);
 
-                    // 每1分鐘添加一個數據點 10s * 1000 
+                    // 每5秒添加一個數據點
                     if (moistureData.labels.length === 0 ||
-                        timestamp - new Date(moistureData.labels[moistureData.labels.length - 1]) >= 10000) {
+                        timestamp - new Date(moistureData.labels[moistureData.labels.length - 1]) >= 5000) {
 
                         moistureData.labels.push(timestamp);
                         moistureData.datasets[0].data.push(data.moisture);
@@ -163,8 +163,8 @@
                 });
         }
 
-        // 每秒更新一次數據
-        setInterval(updateData, 1000);
+        // 每5秒更新一次數據
+        setInterval(updateData, 5000);
         updateData();  // 立即更新一次
         
         // 每10秒更新一次澆水記錄
