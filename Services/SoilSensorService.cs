@@ -19,11 +19,21 @@ namespace SoilSensorCapture.Services
 
         public SoilSensorService(IConfiguration configuration)
         {
-            _httpClient = new HttpClient();
+            // 配置 HttpClient 支援 HTTPS（包含自簽憑證）
+            var handler = new HttpClientHandler()
+            {
+                ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true
+            };
+            
+            _httpClient = new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromSeconds(30) // 設定30秒超時
+            };
+            
             _wateringRecords = new List<WateringRecord>();
 
-            // 使用主機名稱而不是 IP
-            var baseUrl = configuration["SoilSensor:BaseUrl"] ?? "http://soil-sensor-pi.local:8080";
+            // 使用主機名稱而不是 IP (HTTPS with port 443)
+            var baseUrl = configuration["SoilSensor:BaseUrl"] ?? "https://soil-sensor-pi.local:443";
             _apiUrl = $"{baseUrl}/api/soil-data";
             _gpioControlUrl = $"{baseUrl}/api/soil-data/gpio/control";
         }
