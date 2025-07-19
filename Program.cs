@@ -16,7 +16,7 @@ builder.Services.AddHostedService<MqttService>(provider => provider.GetService<M
 // 註冊 SoilSensorService
 builder.Services.AddScoped<SoilSensorService>();
 
-// 🔧 修復：Railway 動態 PORT 配置
+// Railway 動態 PORT 配置
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
 var url = $"http://0.0.0.0:{port}";
 
@@ -29,21 +29,15 @@ var app = builder.Build();
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
-    // 🔧 修復：Railway 自動處理 SSL，移除 HSTS
-    // app.UseHsts();
 }
-
-// 🔧 修復：Railway 自動處理 HTTPS，移除重定向
-// app.UseHttpsRedirection();
 
 app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthorization();
 
-// 🔧 新增：健康檢查端點 (Railway 必需)
-app.MapGet("/", () => "✅ Soil Sensor Monitoring System is running!");
+// 🔧 只保留健康檢查端點，不覆蓋根路徑
 app.MapGet("/health", () => "OK");
-app.MapGet("/status", () => new {
+app.MapGet("/api/status", () => new {
     status = "healthy",
     timestamp = DateTime.UtcNow,
     port = port,
@@ -53,6 +47,7 @@ app.MapGet("/status", () => new {
 // 設定 SignalR Hub 路由
 app.MapHub<SoilDataHub>("/soilDataHub");
 
+// MVC 路由 - 這會處理根路徑 "/"
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
