@@ -29,12 +29,12 @@ namespace SoilSensorCapture.Controllers
                     return Json(data.ToClientFormat());
                 }
 
-                return Json(new { error = "µLªk¨ú±o¼Æ¾Ú" });
+                return Json(new { error = "ï¿½Lï¿½kï¿½ï¿½ï¿½oï¿½Æ¾ï¿½" });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "GetData µo¥Í¿ù»~");
-                return Json(new { error = "¨t²Î¿ù»~" });
+                _logger.LogError(ex, "GetData ï¿½oï¿½Í¿ï¿½ï¿½~");
+                return Json(new { error = "ï¿½tï¿½Î¿ï¿½ï¿½~" });
             }
         }
 
@@ -48,8 +48,8 @@ namespace SoilSensorCapture.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "WaterPlant µo¥Í¿ù»~");
-                return Json(new { success = false, error = "¼å¤ô¥¢±Ñ" });
+                _logger.LogError(ex, "WaterPlant ï¿½oï¿½Í¿ï¿½ï¿½~");
+                return Json(new { success = false, error = "ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½" });
             }
         }
 
@@ -63,8 +63,8 @@ namespace SoilSensorCapture.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "ControlGPIO µo¥Í¿ù»~");
-                return Json(new { success = false, error = "GPIO ±±¨î¥¢±Ñ" });
+                _logger.LogError(ex, "ControlGPIO ï¿½oï¿½Í¿ï¿½ï¿½~");
+                return Json(new { success = false, error = "GPIO ï¿½ï¿½ï¿½î¥¢ï¿½ï¿½" });
             }
         }
 
@@ -78,8 +78,32 @@ namespace SoilSensorCapture.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "GetStatus µo¥Í¿ù»~");
-                return Json(new { success = false, error = "¨ú±oª¬ºA¥¢±Ñ" });
+                _logger.LogError(ex, "GetStatus ï¿½oï¿½Í¿ï¿½ï¿½~");
+                return Json(new { success = false, error = "ï¿½ï¿½ï¿½oï¿½ï¿½ï¿½Aï¿½ï¿½ï¿½ï¿½" });
+            }
+        }
+
+        [HttpGet]
+        public IActionResult GetHistoricalData([FromQuery] int hours = 12)
+        {
+            try
+            {
+                var timeRange = TimeSpan.FromHours(Math.Min(hours, 24)); // é™åˆ¶æœ€å¤§24å°æ™‚
+                var historicalData = _sensorService.GetHistoricalData(timeRange);
+                
+                var clientData = historicalData.Select(data => data.ToClientFormat()).ToList();
+                
+                return Json(new { 
+                    success = true, 
+                    data = clientData,
+                    count = clientData.Count,
+                    timeRange = hours
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetHistoricalData ç™¼ç”ŸéŒ¯èª¤");
+                return Json(new { success = false, error = "ç²å–æ­·å²æ•¸æ“šå¤±æ•—" });
             }
         }
     }

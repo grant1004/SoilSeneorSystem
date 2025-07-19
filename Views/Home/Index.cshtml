@@ -483,10 +483,13 @@
     <div class="chart-section slide-up">
         <div class="chart-header">
             <div class="chart-title-section">
-                <h3 class="chart-title">濕度趨勢</h3>
+                <h3 class="chart-title">12小時濕度趨勢</h3>
                 <span class="moisture-status-tag status-normal" id="moistureStatusTag">等待數據</span>
             </div>
-            <button class="toggle-button" id="toggleChartButton">收起圖表</button>
+            <div>
+                <button class="toggle-button" id="refreshDataButton" style="margin-right: 0.5rem;">重新載入</button>
+                <button class="toggle-button" id="toggleChartButton">收起圖表</button>
+            </div>
         </div>
         
         <div class="stats-grid" id="statsGrid">
@@ -538,6 +541,7 @@
         let chart = null;
         let connection = null;
         let moistureHistory = [];
+        let historicalDataLoaded = false;
         
         // 濕度狀態分類
         function getMoistureStatus(moisture) {
@@ -623,14 +627,19 @@
                             x: {
                                 type: 'time',
                                 time: {
-                                    unit: 'minute',
+                                    unit: 'hour',
                                     displayFormats: {
+                                        hour: 'MM/DD HH:mm',
                                         minute: 'HH:mm'
-                                    }
+                                    },
+                                    stepSize: 1
                                 },
                                 title: {
                                     display: true,
-                                    text: '時間'
+                                    text: '時間 (12小時趨勢)'
+                                },
+                                ticks: {
+                                    maxTicksLimit: 12
                                 }
                             },
                             y: {
@@ -673,6 +682,45 @@
             document.getElementById('minMoisture').textContent = min;
         }
         
+        // 載入歷史數據
+        function loadHistoricalData() {
+            if (historicalDataLoaded) return;
+            
+            addLogEntry('info', '正在載入12小時歷史數據...');
+            
+            fetch('/Home/GetHistoricalData?hours=12')
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success && result.data) {
+                        moistureHistory = result.data.map(item => ({
+                            time: new Date(item.timestamp * 1000),
+                            moisture: item.moisture
+                        }));
+                        
+                        // 按時間排序
+                        moistureHistory.sort((a, b) => a.time - b.time);
+                        
+                        // 更新圖表
+                        if (chart) {
+                            chart.data.labels = moistureHistory.map(item => item.time);
+                            chart.data.datasets[0].data = moistureHistory.map(item => item.moisture);
+                            chart.update('none');
+                        }
+                        
+                        // 更新統計
+                        updateStatistics();
+                        
+                        historicalDataLoaded = true;
+                        addLogEntry('success', `載入完成：${result.count} 筆12小時歷史數據`);
+                    } else {
+                        addLogEntry('warning', '載入歷史數據失敗或無數據');
+                    }
+                })
+                .catch(error => {
+                    addLogEntry('error', `載入歷史數據錯誤: ${error.message}`);
+                });
+        }
+
         // 更新土壤數據顯示
         function updateSoilDataDisplay(data) {
             try {
@@ -689,14 +737,29 @@
                 
                 // 添加到歷史數據
                 const timestamp = new Date(data.timestamp * 1000);
-                moistureHistory.push({ 
+                const newDataPoint = { 
                     time: timestamp, 
                     moisture: data.moisture 
-                });
+                };
                 
-                // 保持最大50個數據點
-                if (moistureHistory.length > 50) {
-                    moistureHistory.shift();
+                // 檢查是否已存在相同時間戳的數據點
+                const existingIndex = moistureHistory.findIndex(item => 
+                    Math.abs(item.time.getTime() - timestamp.getTime()) < 1000 // 1秒內視為同一筆數據
+                );
+                
+                if (existingIndex >= 0) {
+                    // 更新現有數據點
+                    moistureHistory[existingIndex] = newDataPoint;
+                } else {
+                    // 添加新數據點
+                    moistureHistory.push(newDataPoint);
+                    
+                    // 按時間排序
+                    moistureHistory.sort((a, b) => a.time - b.time);
+                    
+                    // 保持12小時內的數據 (最多720個數據點，假設每分鐘一筆)
+                    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+                    moistureHistory = moistureHistory.filter(item => item.time >= twelveHoursAgo);
                 }
                 
                 // 更新圖表
@@ -712,7 +775,7 @@
                 lastDataTime = Date.now();
                 updateConnectionStatus(true, true);
                 
-                addLogEntry('info', `濕度：${data.moisture.toFixed(2)}%，電壓：${data.voltage.toFixed(4)}V`);
+                addLogEntry('info', `濕度：${data.moisture.toFixed(2)}%，電壓：${data.voltage.toFixed(4)}V (歷史數據: ${moistureHistory.length} 筆)`);
             } catch (error) {
                 addLogEntry('error', `更新數據顯示失敗: ${error.message}`);
             }
@@ -743,6 +806,9 @@
                 connection.start().then(function () {
                     addLogEntry('success', 'SignalR 連接建立成功');
                     updateConnectionStatus(true);
+                    
+                    // 載入12小時歷史數據
+                    loadHistoricalData();
                     
                     // 請求初始數據
                     fetch('/Home/GetData')
@@ -835,6 +901,23 @@
             document.getElementById('devButton').addEventListener('click', function() {
                 addLogEntry('info', '開發者工具功能開發中...');
                 // 這裡可以添加開發者工具的功能
+            });
+            
+            // 重新載入歷史數據功能
+            document.getElementById('refreshDataButton').addEventListener('click', function() {
+                const button = this;
+                button.disabled = true;
+                button.textContent = '載入中...';
+                
+                historicalDataLoaded = false;
+                moistureHistory = [];
+                
+                loadHistoricalData();
+                
+                setTimeout(() => {
+                    button.disabled = false;
+                    button.textContent = '重新載入';
+                }, 3000);
             });
             
             // 圖表收縮功能

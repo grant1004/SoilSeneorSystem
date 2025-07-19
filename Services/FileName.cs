@@ -27,7 +27,12 @@ namespace SoilSensorCapture.Services
 
         // 最新的土壤數據
         private SoilData? _latestSoilData;
+        
+        // 歷史數據存儲 (支援12小時)
+        private readonly List<SoilData> _historicalData = new List<SoilData>();
+        private readonly TimeSpan _dataRetentionPeriod = TimeSpan.FromHours(12);
         private readonly object _dataLock = new object();
+        private Timer? _dataCleanupTimer;
 
         public MqttService(
             ILogger<MqttService> logger,
@@ -67,6 +72,10 @@ namespace SoilSensorCapture.Services
             {
                 await _mqttClient.ConnectAsync(_options, cancellationToken);
                 _logger.LogInformation($"✅ 已連接到 MQTT Broker: {brokerHost}:{brokerPort}");
+                
+                // 啟動數據清理定時器 (每10分鐘清理一次過期數據)
+                _dataCleanupTimer = new Timer(CleanOldData, null, TimeSpan.Zero, TimeSpan.FromMinutes(10));
+                _logger.LogInformation("🧹 歷史數據清理定時器已啟動");
             }
             catch (Exception ex)
             {
@@ -78,6 +87,9 @@ namespace SoilSensorCapture.Services
         public async Task StopAsync(CancellationToken cancellationToken)
         {
             _logger.LogInformation("正在停止 MQTT 服務...");
+
+            // 停止清理定時器
+            _dataCleanupTimer?.Dispose();
 
             if (_mqttClient?.IsConnected == true)
             {
@@ -179,11 +191,20 @@ namespace SoilSensorCapture.Services
                     lock (_dataLock)
                     {
                         _latestSoilData = soilData;
+                        
+                        // 添加到歷史數據
+                        _historicalData.Add(soilData);
+                        
+                        // 保持記憶體使用合理，限制最大1440個數據點 (假設每分鐘一筆，24小時數據)
+                        if (_historicalData.Count > 1440)
+                        {
+                            _historicalData.RemoveAt(0);
+                        }
                     }
 
                     // 透過 SignalR 推送到前端
                     await _hubContext.Clients.All.SendAsync("ReceiveSoilData", soilData.ToClientFormat());
-                    _logger.LogDebug($"📊 土壤數據已推送: 電壓={soilData.Voltage}V, 濕度={soilData.Moisture}%");
+                    _logger.LogDebug($"📊 土壤數據已推送: 電壓={soilData.Voltage}V, 濕度={soilData.Moisture}% (歷史數據: {_historicalData.Count} 筆)");
                 }
             }
             catch (Exception ex)
@@ -254,6 +275,58 @@ namespace SoilSensorCapture.Services
             }
         }
 
+        // 取得歷史數據
+        public List<SoilData> GetHistoricalData(TimeSpan? timeRange = null)
+        {
+            lock (_dataLock)
+            {
+                if (timeRange == null)
+                    timeRange = _dataRetentionPeriod;
+
+                var cutoffTime = DateTime.UtcNow.Subtract(timeRange.Value);
+                
+                return _historicalData
+                    .Where(data => DateTime.TryParse(data.Timestamp, out DateTime dataTime) && dataTime >= cutoffTime)
+                    .ToList();
+            }
+        }
+
+        // 清理過期數據
+        private void CleanOldData(object? state)
+        {
+            try
+            {
+                var cutoffTime = DateTime.UtcNow.Subtract(_dataRetentionPeriod);
+                int originalCount;
+                int removedCount = 0;
+
+                lock (_dataLock)
+                {
+                    originalCount = _historicalData.Count;
+                    
+                    _historicalData.RemoveAll(data =>
+                    {
+                        if (DateTime.TryParse(data.Timestamp, out DateTime dataTime))
+                        {
+                            return dataTime < cutoffTime;
+                        }
+                        return false; // 如果無法解析時間，保留數據
+                    });
+                    
+                    removedCount = originalCount - _historicalData.Count;
+                }
+
+                if (removedCount > 0)
+                {
+                    _logger.LogInformation($"🧹 已清理 {removedCount} 筆過期數據，剩餘 {_historicalData.Count} 筆");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "清理歷史數據時發生錯誤");
+            }
+        }
+
         // 澆水操作 (開啟1秒後關閉)
         public async Task<bool> WaterPlantAsync()
         {
@@ -283,6 +356,7 @@ namespace SoilSensorCapture.Services
 
         public void Dispose()
         {
+            _dataCleanupTimer?.Dispose();
             _mqttClient?.Dispose();
         }
     }

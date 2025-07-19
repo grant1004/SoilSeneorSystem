@@ -82,6 +82,20 @@ namespace SoilSensorCapture.Services
                 return false;
             }
         }
+
+        // 取得歷史數據
+        public List<SoilData> GetHistoricalData(TimeSpan? timeRange = null)
+        {
+            try
+            {
+                return _mqttService.GetHistoricalData(timeRange);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "取得歷史數據失敗");
+                return new List<SoilData>();
+            }
+        }
     }
 
     // 保留原有的 GPIOResponse 類別以保持相容性
