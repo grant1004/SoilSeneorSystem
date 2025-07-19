@@ -1,27 +1,83 @@
-﻿namespace SoilSensorCapture.Models
+﻿using Newtonsoft.Json;
+
+namespace SoilSensorCapture.Models
 {
-    // Models/SoilData.cs
+    // 土壤數據模型 - 對應 MQTT JSON 格式
     public class SoilData
     {
+        [JsonProperty("timestamp")]
+        public string Timestamp { get; set; } = string.Empty;
+
+        [JsonProperty("voltage")]
         public float Voltage { get; set; }
+
+        [JsonProperty("moisture")]
         public float Moisture { get; set; }
-        public long Timestamp { get; set; }
+
+        [JsonProperty("gpio_status")]
+        public bool GpioStatus { get; set; }
+
+        [JsonProperty("type")]
+        public string Type { get; set; } = string.Empty;
+
+        // 轉換為前端需要的格式
+        public object ToClientFormat()
+        {
+            // 將時間戳轉換為 Unix timestamp (秒)
+            if (DateTime.TryParse(Timestamp, out DateTime dt))
+            {
+                var unixTimestamp = ((DateTimeOffset)dt).ToUnixTimeSeconds();
+                return new
+                {
+                    voltage = Voltage,
+                    moisture = Moisture,
+                    timestamp = unixTimestamp,
+                    gpio_status = GpioStatus
+                };
+            }
+
+            return new
+            {
+                voltage = Voltage,
+                moisture = Moisture,
+                timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                gpio_status = GpioStatus
+            };
+        }
     }
 
-    // Models/WateringRecord.cs
-    public class WateringRecord
+    // 系統狀態模型
+    public class SystemStatus
     {
-        public DateTime WateringTime { get; set; }
-        public float MoistureBefore { get; set; }
-        public float MoistureAfter { get; set; }
-        public float MoistureChange { get; set; }
-        public WateringType Type { get; set; }
+        [JsonProperty("timestamp")]
+        public string Timestamp { get; set; } = string.Empty;
+
+        [JsonProperty("system")]
+        public string System { get; set; } = string.Empty;
+
+        [JsonProperty("last_command")]
+        public string LastCommand { get; set; } = string.Empty;
+
+        [JsonProperty("uptime")]
+        public long Uptime { get; set; }
+
+        [JsonProperty("voltage")]
+        public float Voltage { get; set; }
+
+        [JsonProperty("moisture")]
+        public float Moisture { get; set; }
+
+        [JsonProperty("gpio_status")]
+        public bool GpioStatus { get; set; }
+
+        [JsonProperty("type")]
+        public string Type { get; set; } = string.Empty;
     }
 
-    public enum WateringType
+    // 指令回應模型
+    public class CommandResponse
     {
-        Automatic,    // 自動澆水
-        Manual,       // 手動澆水
-        Detected      // 檢測到的澆水
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
     }
 }

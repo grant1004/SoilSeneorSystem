@@ -1,58 +1,91 @@
-// Controllers/HomeController.cs
 using Microsoft.AspNetCore.Mvc;
 using SoilSensorCapture.Services;
 
-public class HomeController : Controller
+namespace SoilSensorCapture.Controllers
 {
-    private readonly SoilSensorService _sensorService;
-
-    public HomeController(SoilSensorService sensorService)
+    public class HomeController : Controller
     {
-        _sensorService = sensorService;
+        private readonly SoilSensorService _sensorService;
+        private readonly ILogger<HomeController> _logger;
+
+        public HomeController(SoilSensorService sensorService, ILogger<HomeController> logger)
+        {
+            _sensorService = sensorService;
+            _logger = logger;
+        }
+
+        public IActionResult Index() => View();
+        public IActionResult Privacy() => View();
+        public IActionResult Error() => View();
+
+        [HttpGet]
+        public async Task<IActionResult> GetData()
+        {
+            try
+            {
+                var data = await _sensorService.GetSoilDataAsync();
+                if (data != null)
+                {
+                    return Json(data.ToClientFormat());
+                }
+
+                return Json(new { error = "無法取得數據" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetData 發生錯誤");
+                return Json(new { error = "系統錯誤" });
+            }
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> WaterPlant()
+        {
+            try
+            {
+                var success = await _sensorService.WaterPlantAsync();
+                return Json(new { success });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "WaterPlant 發生錯誤");
+                return Json(new { success = false, error = "澆水失敗" });
+            }
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> ControlGPIO([FromBody] ControlRequest request)
+        {
+            try
+            {
+                var success = await _sensorService.ControlGPIOAsync(request.State);
+                return Json(new { success });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ControlGPIO 發生錯誤");
+                return Json(new { success = false, error = "GPIO 控制失敗" });
+            }
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetStatus()
+        {
+            try
+            {
+                var success = await _sensorService.GetSystemStatusAsync();
+                return Json(new { success });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetStatus 發生錯誤");
+                return Json(new { success = false, error = "取得狀態失敗" });
+            }
+        }
     }
 
-    public IActionResult Index() => View();
-    public IActionResult Privacy() => View();
-    public IActionResult Error() => View();
-
-    [HttpGet]
-    public async Task<IActionResult> GetData()
+    public class ControlRequest
     {
-        var data = await _sensorService.GetSoilDataAsync();
-        return Json(data);
+        public bool State { get; set; }
     }
-
-    [HttpPost]
-    public async Task<IActionResult> WaterPlant()
-    {
-        var success = await _sensorService.WaterPlantAsync();
-        return Json( new { success });
-    }
-
-    [HttpGet]
-    public IActionResult GetWateringRecords()
-    {
-        var records = _sensorService.GetWateringRecords();
-        return Json(records);
-    }
-
-    [HttpPost]
-    public IActionResult SetAutoWatering([FromBody] AutoWateringRequest request)
-    {
-        _sensorService.SetAutoWateringEnabled(request.enabled);
-        return Json(new { success = true, enabled = request.enabled });
-    }
-
-    [HttpGet]
-    public IActionResult GetAutoWateringSettings()
-    {
-        var settings = _sensorService.GetAutoWateringSettings();
-        return Json(settings);
-    }
-
-    public class AutoWateringRequest
-    {
-        public bool enabled { get; set; }
-    }
-
 }

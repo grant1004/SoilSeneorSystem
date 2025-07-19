@@ -1,288 +1,879 @@
-﻿<!-- Views/Home/Index.cshtml -->
-@{
+﻿@{
     ViewData["Title"] = "土壤濕度監控";
 }
 
-<div class="text-center">
-    <h1 class="display-4">土壤濕度監控系統
-        <button id="waterButton" class="btn btn-primary">澆水</button>
-    </h1>
+<style>
+    body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        background: #f8fafc;
+        color: #1e293b;
+        line-height: 1.6;
+    }
     
-    <div class="card mt-4">
-        <div class="card-body">
-            <h5 class="card-title">即時數據</h5>
-            <p class="card-text">電壓: <span id="voltage">--</span> V</p>
-            <p class="card-text">濕度: <span id="moisture">--</span> %</p>
-            <p class="card-text">最後更新時間: <span id="timestamp">--</span></p>
+    .main-container {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 2rem 1rem;
+    }
+    
+    /* Header */
+    .header-section {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 2rem 3rem;
+        margin-bottom: 2rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    
+    .header-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .header-left {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    
+    .header h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #0f172a;
+        letter-spacing: -0.025em;
+        margin: 0;
+    }
+    
+    .status-badge {
+        background: #f0fdf4;
+        border: 1px solid #22c55e;
+        color: #15803d;
+        padding: 0.375rem 0.75rem;
+        border-radius: 3px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    
+    .status-connecting {
+        background: #fffbeb;
+        border-color: #f59e0b;
+        color: #d97706;
+    }
+    
+    .status-error {
+        background: #fef2f2;
+        border-color: #dc2626;
+        color: #dc2626;
+    }
+    
+    .last-update {
+        font-size: 0.75rem;
+        color: #64748b;
+        font-weight: 500;
+    }
+    
+    /* Data Cards */
+    .data-section {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+        margin-bottom: 2rem;
+    }
+    
+    .data-card {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 2.5rem 2rem;
+        transition: all 0.2s;
+    }
+    
+    .data-card:hover {
+        border-color: #cbd5e1;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+    
+    .data-label {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-bottom: 1rem;
+    }
+    
+    .data-value {
+        font-size: 3.5rem;
+        font-weight: 700;
+        color: #0f172a;
+        line-height: 1;
+        margin-bottom: 0.5rem;
+    }
+    
+    .data-unit {
+        font-size: 1.125rem;
+        font-weight: 500;
+        color: #64748b;
+    }
+    
+    .moisture-card {
+        border-left: 4px solid #22c55e;
+    }
+    
+    .voltage-card {
+        border-left: 4px solid #3b82f6;
+    }
+    
+    /* Button Section */
+    .button-section {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+        margin-bottom: 2rem;
+    }
+    
+    .water-button {
+        background: #0ea5e9;
+        border: none;
+        border-radius: 4px;
+        padding: 1.25rem 2rem;
+        color: white;
+        font-weight: 600;
+        font-size: 1rem;
+        transition: all 0.2s;
+        cursor: pointer;
+    }
+    
+    .water-button:hover {
+        background: #0284c7;
+        transform: translateY(-1px);
+    }
+    
+    .water-button:disabled {
+        background: #94a3b8;
+        cursor: not-allowed;
+        transform: none;
+    }
+    
+    .dev-button {
+        background: #f1f5f9;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        padding: 1.25rem 2rem;
+        color: #475569;
+        font-weight: 600;
+        font-size: 1rem;
+        transition: all 0.2s;
+        cursor: pointer;
+    }
+    
+    .dev-button:hover {
+        background: #e2e8f0;
+        border-color: #cbd5e1;
+    }
+    
+    /* Chart Section */
+    .chart-section {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+    }
+    
+    .chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .chart-title-section {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    
+    .chart-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #0f172a;
+        margin: 0;
+    }
+    
+    .moisture-status-tag {
+        padding: 0.375rem 0.875rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    
+    .status-very-dry {
+        background: #fef2f2;
+        color: #dc2626;
+        border: 1px solid #fecaca;
+    }
+    
+    .status-dry {
+        background: #fffbeb;
+        color: #d97706;
+        border: 1px solid #fed7aa;
+    }
+    
+    .status-normal {
+        background: #f0fdf4;
+        color: #16a34a;
+        border: 1px solid #bbf7d0;
+    }
+    
+    .status-wet {
+        background: #eff6ff;
+        color: #2563eb;
+        border: 1px solid #bfdbfe;
+    }
+    
+    .toggle-button {
+        background: #f1f5f9;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        padding: 0.5rem 1rem;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: #475569;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .toggle-button:hover {
+        background: #e2e8f0;
+        color: #334155;
+    }
+    
+    .chart-container {
+        height: 280px;
+        background: #f8fafc;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #64748b;
+        font-weight: 500;
+        border: 1px solid #e2e8f0;
+        position: relative;
+    }
+    
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .stat-item {
+        text-align: center;
+        padding: 1rem;
+        background: #f8fafc;
+        border-radius: 4px;
+        border: 1px solid #e2e8f0;
+    }
+    
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #0f172a;
+        margin-bottom: 0.25rem;
+    }
+    
+    .stat-label {
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+    }
+    
+    /* Log Section */
+    .log-section {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 2rem;
+    }
+    
+    .log-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .log-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #0f172a;
+        margin: 0;
+    }
+    
+    .clear-log-button {
+        background: #f1f5f9;
+        border: 1px solid #e2e8f0;
+        border-radius: 3px;
+        padding: 0.375rem 0.75rem;
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: #475569;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .clear-log-button:hover {
+        background: #e2e8f0;
+    }
+    
+    .log-content {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        padding: 1rem;
+        height: 200px;
+        overflow-y: auto;
+        font-family: 'SF Mono', 'Monaco', 'Cascadia Code', 'Roboto Mono', monospace;
+        font-size: 0.75rem;
+        line-height: 1.5;
+        color: #475569;
+    }
+    
+    .log-entry {
+        margin-bottom: 0.25rem;
+    }
+    
+    .log-timestamp {
+        color: #64748b;
+        font-weight: 500;
+    }
+    
+    .log-level-info {
+        color: #2563eb;
+        font-weight: 600;
+    }
+    
+    .log-level-warning {
+        color: #d97706;
+        font-weight: 600;
+    }
+    
+    .log-level-error {
+        color: #dc2626;
+        font-weight: 600;
+    }
+    
+    .log-level-success {
+        color: #16a34a;
+        font-weight: 600;
+    }
+    
+    @@media (max-width: 768px) {
+        .header-content {
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .header-left {
+            flex-direction: column;
+            text-align: center;
+            gap: 0.5rem;
+        }
+        
+        .data-section {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+        
+        .button-section {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+        
+        .stats-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .chart-title-section {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+        
+        .data-value {
+            font-size: 2.5rem;
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+        }
+    }
+    
+    .fade-in {
+        opacity: 0;
+        animation: fadeIn 0.5s ease forwards;
+    }
+    
+    @@keyframes fadeIn {
+        to {
+            opacity: 1;
+        }
+    }
+    
+    .slide-up {
+        transform: translateY(20px);
+        opacity: 0;
+        animation: slideUp 0.6s ease forwards;
+    }
+    
+    @@keyframes slideUp {
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+</style>
+
+<div class="main-container">
+    <!-- Header -->
+    <div class="header-section fade-in">
+        <div class="header-content">
+            <div class="header-left">
+                <h1>土壤濕度監控系統</h1>
+                <span class="status-badge status-connecting" id="connectionStatus">正在連接...</span>
+            </div>
+            <div class="last-update" id="lastUpdate">等待數據...</div>
         </div>
     </div>
-
-    <!-- 自動澆水控制 -->
-    <div class="card mt-4">
-        <div class="card-body">
-            <h5 class="card-title">自動澆水設定</h5>
-            <div class="row">
-                <div class="col-md-6">
-                    <div class="form-check form-switch">
-                        <input class="form-check-input" type="checkbox" id="autoWateringSwitch">
-                        <label class="form-check-label" for="autoWateringSwitch">
-                            啟用自動澆水 (濕度 < 30%)
-                        </label>
-                    </div>
-                </div>
-                <div class="col-md-6">
-                    <div id="autoWateringStatus" class="text-muted">
-                        <small>載入中...</small>
-                    </div>
-                </div>
+    
+    <!-- Data Cards -->
+    <div class="data-section">
+        <div class="data-card moisture-card slide-up">
+            <div class="data-label">土壤濕度</div>
+            <div class="data-value" id="moisture">--</div>
+            <div class="data-unit">%</div>
+        </div>
+        
+        <div class="data-card voltage-card slide-up">
+            <div class="data-label">感測電壓</div>
+            <div class="data-value" id="voltage">--</div>
+            <div class="data-unit">V</div>
+        </div>
+    </div>
+    
+    <!-- Button Section -->
+    <div class="button-section slide-up">
+        <button class="water-button" id="waterButton">澆水</button>
+        <button class="dev-button" id="devButton">開發者工具</button>
+    </div>
+    
+    <!-- Chart -->
+    <div class="chart-section slide-up">
+        <div class="chart-header">
+            <div class="chart-title-section">
+                <h3 class="chart-title">濕度趨勢</h3>
+                <span class="moisture-status-tag status-normal" id="moistureStatusTag">等待數據</span>
+            </div>
+            <button class="toggle-button" id="toggleChartButton">收起圖表</button>
+        </div>
+        
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-item">
+                <div class="stat-value" id="avgMoisture">--</div>
+                <div class="stat-label">平均值</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="maxMoisture">--</div>
+                <div class="stat-label">最高值</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="minMoisture">--</div>
+                <div class="stat-label">最低值</div>
             </div>
         </div>
-    </div>
-
-    <!-- 添加圖表容器 -->
-    <div class="card mt-4">
-        <div class="card-body">
-            <h5 class="card-title">濕度歷史趨勢</h5>
+        
+        <div class="chart-container" id="chartContainer">
             <canvas id="moistureChart"></canvas>
         </div>
     </div>
-
-    <!-- 添加澆水記錄容器 -->
-    <div class="card mt-4">
-        <div class="card-body">
-            <h5 class="card-title">澆水記錄</h5>
-            <div id="wateringRecords">
-                <p class="text-muted">載入中...</p>
+    
+    <!-- Log Section -->
+    <div class="log-section slide-up">
+        <div class="log-header">
+            <h3 class="log-title">系統日誌</h3>
+            <button class="clear-log-button" id="clearLogButton">清除日誌</button>
+        </div>
+        <div class="log-content" id="logContent">
+            <div class="log-entry">
+                <span class="log-timestamp">[載入中]</span>
+                <span class="log-level-info">[INFO]</span>
+                系統正在初始化...
             </div>
         </div>
     </div>
-
 </div>
 
 @section Scripts {
+    <!-- 必要的 JavaScript 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/moment@2.29.4/moment.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@1.0.1/dist/chartjs-adapter-moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+    
     <script>
-
-        // 初始化圖表數據
-        const maxDataPoints = 8640; // 1day => 1440 分鐘 
-        const moistureData = {
-            labels: [],
-            datasets: [{
-                label: '濕度 (%)',
-                data: [],
-                borderColor: 'rgb(75, 192, 192)',
-                tension: 0.1
-            }]
-        };
-
-        // 創建圖表
-        const ctx = document.getElementById('moistureChart').getContext('2d');
-        const chart = new Chart(ctx, {
-            type: 'line',
-            data: moistureData,
-            options: {
-                scales: {
-                    x: {
-                        type: 'time',
-                        time: {
-                            unit: 'minute',
-                            displayFormats: {
-                                minute: 'HH:mm'
+        // 全域變數
+        let lastDataTime = Date.now();
+        let chart = null;
+        let connection = null;
+        let moistureHistory = [];
+        
+        // 濕度狀態分類
+        function getMoistureStatus(moisture) {
+            if (moisture <= 30) {
+                return { text: '過度乾燥', class: 'status-very-dry' };
+            } else if (moisture <= 50) {
+                return { text: '偏乾', class: 'status-dry' };
+            } else if (moisture <= 80) {
+                return { text: '正常濕度', class: 'status-normal' };
+            } else {
+                return { text: '過濕', class: 'status-wet' };
+            }
+        }
+        
+        // 更新濕度狀態標籤
+        function updateMoistureStatus(moisture) {
+            const statusTag = document.getElementById('moistureStatusTag');
+            const status = getMoistureStatus(moisture);
+            
+            statusTag.textContent = status.text;
+            statusTag.className = `moisture-status-tag ${status.class}`;
+        }
+        
+        // 添加日誌條目
+        function addLogEntry(level, message) {
+            const logContent = document.getElementById('logContent');
+            const time = new Date().toLocaleTimeString();
+            
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.innerHTML = `
+                <span class="log-timestamp">[${time}]</span>
+                <span class="log-level-${level}">[${level.toUpperCase()}]</span>
+                ${message}
+            `;
+            
+            logContent.appendChild(logEntry);
+            logContent.scrollTop = logContent.scrollHeight;
+            console.log(`[${level.toUpperCase()}] ${message}`);
+        }
+        
+        // 更新連線狀態
+        function updateConnectionStatus(isConnected, isReceivingData = false) {
+            const statusBadge = document.getElementById('connectionStatus');
+            
+            if (isConnected) {
+                if (isReceivingData) {
+                    statusBadge.textContent = '即時連線正常';
+                    statusBadge.className = 'status-badge';
+                } else {
+                    statusBadge.textContent = '已連接，等待數據';
+                    statusBadge.className = 'status-badge status-connecting';
+                }
+            } else {
+                statusBadge.textContent = '連線中斷';
+                statusBadge.className = 'status-badge status-error';
+            }
+        }
+        
+        // 初始化圖表
+        function initChart() {
+            try {
+                const ctx = document.getElementById('moistureChart').getContext('2d');
+                chart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: '濕度 (%)',
+                            data: [],
+                            borderColor: '#22c55e',
+                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                            tension: 0.1,
+                            fill: false,
+                            pointRadius: 2,
+                            pointHoverRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    unit: 'minute',
+                                    displayFormats: {
+                                        minute: 'HH:mm'
+                                    }
+                                },
+                                title: {
+                                    display: true,
+                                    text: '時間'
+                                }
+                            },
+                            y: {
+                                beginAtZero: true,
+                                max: 100,
+                                title: {
+                                    display: true,
+                                    text: '濕度 (%)'
+                                }
                             }
                         },
-                        title: {
-                            display: true,
-                            text: '時間'
-                        }
-                    },
-                    y: {
-                        beginAtZero: true,
-                        max: 100,
-                        title: {
-                            display: true,
-                            text: '濕度 (%)'
+                        animation: {
+                            duration: 0
+                        },
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top'
+                            }
                         }
                     }
-                },
-                animation: false,
-                responsive: true
+                });
+                addLogEntry('success', 'Chart.js 圖表建立成功');
+            } catch (error) {
+                addLogEntry('error', `圖表建立失敗: ${error.message}`);
             }
-        });
-
-        function updateData() {
-            fetch('/Home/GetData')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('voltage').textContent = data.voltage.toFixed(4);
-                    document.getElementById('moisture').textContent = data.moisture.toFixed(2);
-                    document.getElementById('timestamp').textContent =  new Date(data.timestamp * 1000).toLocaleString();
-                    // 更新圖表
-                    const timestamp = new Date(data.timestamp * 1000);
-
-                    // 每5秒添加一個數據點
-                    if (moistureData.labels.length === 0 ||
-                        timestamp - new Date(moistureData.labels[moistureData.labels.length - 1]) >= 5000) {
-
-                        moistureData.labels.push(timestamp);
-                        moistureData.datasets[0].data.push(data.moisture);
-
-                        if (moistureData.labels.length > maxDataPoints) {
-                            moistureData.labels.shift();
-                            moistureData.datasets[0].data.shift();
-                        }
-
-                        chart.update();
-                    }
-                })
-                .catch(error => console.error('Error:', error));
         }
-
         
+        // 更新統計數據
+        function updateStatistics() {
+            if (moistureHistory.length === 0) return;
+            
+            const values = moistureHistory.map(item => item.moisture);
+            const avg = (values.reduce((a, b) => a + b, 0) / values.length).toFixed(1);
+            const max = Math.max(...values).toFixed(1);
+            const min = Math.min(...values).toFixed(1);
+            
+            document.getElementById('avgMoisture').textContent = avg;
+            document.getElementById('maxMoisture').textContent = max;
+            document.getElementById('minMoisture').textContent = min;
+        }
         
-
-        // 更新澆水記錄
-        function updateWateringRecords() {
-            console.log('正在更新澆水記錄...');
-            fetch('/Home/GetWateringRecords')
-                .then(response => response.json())
-                .then(records => {
-                    console.log('取得澆水記錄:', records);
-                    const recordsContainer = document.getElementById('wateringRecords');
-                    
-                    if (records.length === 0) {
-                        recordsContainer.innerHTML = '<p class="text-muted">尚無澆水記錄</p>';
-                        return;
-                    }
-                    
-                    let html = '<div class="table-responsive"><table class="table table-striped table-sm">';
-                    html += '<thead><tr><th>時間</th><th>類型</th><th>澆水前濕度</th><th>澆水後濕度</th><th>濕度變化</th></tr></thead><tbody>';
-                    
-                    records.forEach(record => {
-                        const time = new Date(record.wateringTime).toLocaleString();
-                        const type = record.type === 0 ? '自動' : record.type === 1 ? '手動' : '檢測';
-                        const typeClass = record.type === 0 ? 'badge-success' : record.type === 1 ? 'badge-primary' : 'badge-info';
-                        const beforeMoisture = record.moistureBefore.toFixed(1);
-                        const afterMoisture = record.moistureAfter > 0 ? record.moistureAfter.toFixed(1) : '--';
-                        const change = record.moistureChange > 0 ? '+' + record.moistureChange.toFixed(1) : '--';
-                        
-                        html += `<tr>
-                            <td>${time}</td>
-                            <td><span class="badge ${typeClass}">${type}</span></td>
-                            <td>${beforeMoisture}%</td>
-                            <td>${afterMoisture}%</td>
-                            <td>${change}%</td>
-                        </tr>`;
-                    });
-                    
-                    html += '</tbody></table></div>';
-                    recordsContainer.innerHTML = html;
-                })
-                .catch(error => {
-                    console.error('Error fetching watering records:', error);
-                    document.getElementById('wateringRecords').innerHTML = '<p class="text-danger">載入記錄失敗</p>';
+        // 更新土壤數據顯示
+        function updateSoilDataDisplay(data) {
+            try {
+                // 更新數值顯示
+                document.getElementById('voltage').textContent = data.voltage.toFixed(4);
+                document.getElementById('moisture').textContent = data.moisture.toFixed(2);
+                
+                // 更新時間顯示
+                const date = new Date(data.timestamp * 1000);
+                document.getElementById('lastUpdate').textContent = `最後更新：${date.toLocaleString('zh-TW')}`;
+                
+                // 更新濕度狀態
+                updateMoistureStatus(data.moisture);
+                
+                // 添加到歷史數據
+                const timestamp = new Date(data.timestamp * 1000);
+                moistureHistory.push({ 
+                    time: timestamp, 
+                    moisture: data.moisture 
                 });
-        }
-
-        // 更新自動澆水設定
-        function updateAutoWateringSettings() {
-            fetch('/Home/GetAutoWateringSettings')
-                .then(response => response.json())
-                .then(settings => {
-                    document.getElementById('autoWateringSwitch').checked = settings.enabled;
-                    
-                    let statusText = settings.enabled ? '🟢 已啟用' : '⚪ 已停用';
-                    
-                    if (settings.enabled) {
-                        const nextAvailable = new Date(settings.nextAvailableTime);
-                        const now = new Date();
-                        
-                        if (nextAvailable > now) {
-                            const minutesLeft = Math.ceil((nextAvailable - now) / (1000 * 60));
-                            statusText += ` (冷卻中，還需 ${minutesLeft} 分鐘)`;
-                        } else {
-                            statusText += ' (待機中)';
-                        }
-                    }
-                    
-                    document.getElementById('autoWateringStatus').innerHTML = `<small>${statusText}</small>`;
-                })
-                .catch(error => {
-                    console.error('Error fetching auto watering settings:', error);
-                    document.getElementById('autoWateringStatus').innerHTML = '<small class="text-danger">載入設定失敗</small>';
-                });
-        }
-
-        // 設定自動澆水開關
-        function setAutoWatering(enabled) {
-            fetch('/Home/SetAutoWatering', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ enabled: enabled })
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (result.success) {
-                    console.log('自動澆水設定已更新:', result.enabled);
-                    updateAutoWateringSettings();
-                } else {
-                    alert('設定失敗');
-                    // 恢復開關狀態
-                    document.getElementById('autoWateringSwitch').checked = !enabled;
+                
+                // 保持最大50個數據點
+                if (moistureHistory.length > 50) {
+                    moistureHistory.shift();
                 }
-            })
-            .catch(error => {
-                console.error('Error setting auto watering:', error);
-                alert('設定錯誤');
-                // 恢復開關狀態
-                document.getElementById('autoWateringSwitch').checked = !enabled;
-            });
+                
+                // 更新圖表
+                if (chart) {
+                    chart.data.labels = moistureHistory.map(item => item.time);
+                    chart.data.datasets[0].data = moistureHistory.map(item => item.moisture);
+                    chart.update('none');
+                }
+                
+                // 更新統計
+                updateStatistics();
+                
+                lastDataTime = Date.now();
+                updateConnectionStatus(true, true);
+                
+                addLogEntry('info', `濕度：${data.moisture.toFixed(2)}%，電壓：${data.voltage.toFixed(4)}V`);
+            } catch (error) {
+                addLogEntry('error', `更新數據顯示失敗: ${error.message}`);
+            }
         }
-
-        // 每5秒更新一次數據
-        setInterval(updateData, 5000);
-        updateData();  // 立即更新一次
         
-        // 每10秒更新一次澆水記錄
-        setInterval(updateWateringRecords, 10000);
-        updateWateringRecords();  // 立即更新一次
+        // SignalR 連接初始化
+        function initSignalR() {
+            try {
+                connection = new signalR.HubConnectionBuilder()
+                    .withUrl("/soilDataHub")
+                    .withAutomaticReconnect()
+                    .build();
+                
+                // 事件處理
+                connection.on("ReceiveSoilData", function (data) {
+                    updateSoilDataDisplay(data);
+                });
+                
+                connection.on("ReceiveSystemStatus", function (status) {
+                    addLogEntry('info', `系統狀態：${status.system}`);
+                });
+                
+                connection.on("ReceiveCommandResponse", function (response) {
+                    addLogEntry('info', `指令回應：${response}`);
+                });
+                
+                // 啟動連接
+                connection.start().then(function () {
+                    addLogEntry('success', 'SignalR 連接建立成功');
+                    updateConnectionStatus(true);
+                    
+                    // 請求初始數據
+                    fetch('/Home/GetData')
+                        .then(response => response.json())
+                        .then(data => {
+                            if (!data.error) {
+                                updateSoilDataDisplay(data);
+                                addLogEntry('success', '初始數據載入成功');
+                            } else {
+                                addLogEntry('warning', `初始數據載入錯誤: ${data.error}`);
+                            }
+                        })
+                        .catch(error => {
+                            addLogEntry('error', `初始數據載入失敗: ${error.message}`);
+                        });
+                        
+                }).catch(function (err) {
+                    addLogEntry('error', `SignalR 連接失敗: ${err.message}`);
+                    updateConnectionStatus(false);
+                });
+                
+                // 重連事件
+                connection.onreconnecting((error) => {
+                    addLogEntry('warning', 'SignalR 正在重新連接...');
+                    updateConnectionStatus(false);
+                });
+                
+                connection.onreconnected((connectionId) => {
+                    addLogEntry('success', 'SignalR 重新連接成功');
+                    updateConnectionStatus(true);
+                });
+                
+                connection.onclose((error) => {
+                    addLogEntry('error', 'SignalR 連接關閉');
+                    updateConnectionStatus(false);
+                });
+                
+            } catch (error) {
+                addLogEntry('error', `SignalR 初始化失敗: ${error.message}`);
+            }
+        }
         
-        // 每30秒更新一次自動澆水設定
-        setInterval(updateAutoWateringSettings, 30000);
-        updateAutoWateringSettings();  // 立即更新一次
-    </script>
-    <script>
-        $(document).ready(function () {
-            $("#waterButton").click(function () {
-                $(this).prop('disabled', true);
-
-                $.post('/Home/WaterPlant', function (result) {
-                    if (result.success) {
-                        alert('澆水成功');
-                        // 立即更新澆水記錄
-                        updateWateringRecords();
-                    } else {
-                        alert('澆水失敗');
-                    }
-                })
-                    .fail(function () {
-                        alert('系統錯誤');
-                    })
-                    .always(function () {
-                        setTimeout(function () {
-                            $("#waterButton").prop('disabled', false);
-                        }, 5000);  // 5秒後可以再次點擊
-                    });
+        // DOM 載入完成後執行
+        document.addEventListener('DOMContentLoaded', function() {
+            addLogEntry('info', '系統啟動完成');
+            
+            // 添加動畫延遲
+            const slideElements = document.querySelectorAll('.slide-up');
+            slideElements.forEach((el, index) => {
+                el.style.animationDelay = `${0.2 + index * 0.1}s`;
             });
             
-            // 自動澆水開關事件
-            $("#autoWateringSwitch").change(function () {
-                const enabled = $(this).prop('checked');
-                setAutoWatering(enabled);
+            // 初始化圖表
+            setTimeout(initChart, 100);
+            
+            // 初始化 SignalR
+            setTimeout(initSignalR, 200);
+            
+            // 澆水按鈕事件
+            document.getElementById('waterButton').addEventListener('click', function() {
+                const button = this;
+                button.disabled = true;
+                button.textContent = '澆水中...';
+                addLogEntry('info', '開始澆水操作');
+                
+                fetch('/Home/WaterPlant', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success) {
+                        addLogEntry('success', '澆水操作完成');
+                    } else {
+                        addLogEntry('error', `澆水失敗：${result.error || '未知錯誤'}`);
+                    }
+                })
+                .catch(error => {
+                    addLogEntry('error', `澆水操作錯誤: ${error.message}`);
+                })
+                .finally(() => {
+                    setTimeout(() => {
+                        button.disabled = false;
+                        button.textContent = '澆水';
+                    }, 5000);
+                });
             });
+            
+            // 開發者工具按鈕事件
+            document.getElementById('devButton').addEventListener('click', function() {
+                addLogEntry('info', '開發者工具功能開發中...');
+                // 這裡可以添加開發者工具的功能
+            });
+            
+            // 圖表收縮功能
+            document.getElementById('toggleChartButton').addEventListener('click', function() {
+                const chartContainer = document.getElementById('chartContainer');
+                const statsGrid = document.getElementById('statsGrid');
+                const button = this;
+                
+                if (chartContainer.style.display === 'none') {
+                    chartContainer.style.display = 'flex';
+                    statsGrid.style.display = 'grid';
+                    button.textContent = '收起圖表';
+                } else {
+                    chartContainer.style.display = 'none';
+                    statsGrid.style.display = 'none';
+                    button.textContent = '展開圖表';
+                }
+            });
+            
+            // 清除日誌功能
+            document.getElementById('clearLogButton').addEventListener('click', function() {
+                const logContent = document.getElementById('logContent');
+                logContent.innerHTML = '';
+                addLogEntry('info', '日誌已清除');
+            });
+            
+            // 數據超時檢查
+            setInterval(function() {
+                const now = Date.now();
+                if (now - lastDataTime > 30000) {
+                    if (connection && connection.state === signalR.HubConnectionState.Connected) {
+                        updateConnectionStatus(true, false);
+                    } else {
+                        updateConnectionStatus(false);
+                    }
+                }
+            }, 5000);
+            
+            addLogEntry('success', '系統初始化完成');
         });
     </script>
 }

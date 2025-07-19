@@ -1,297 +1,94 @@
 ﻿using SoilSensorCapture.Models;
-using System.Diagnostics;
-using System.Text.Json;
 
 namespace SoilSensorCapture.Services
 {
-    // Services/SoilSensorService.cs
+    // Services/SoilSensorService.cs - 重構為使用 MQTT
     public class SoilSensorService
     {
-        private readonly HttpClient _httpClient;
-        private readonly string _apiUrl;
-        private readonly string _gpioControlUrl;
-        private readonly List<WateringRecord> _wateringRecords;
-        private SoilData _lastSoilData;
-        private bool _autoWateringEnabled = false;
-        private DateTime _lastAutoWateringTime = DateTime.MinValue;
-        private readonly float _moistureThreshold = 30.0f; // 30% 濕度閾值
-        private readonly int _autoWateringCooldownMinutes = 30; // 30分鐘冷卻時間
+        private readonly MqttService _mqttService;
+        private readonly ILogger<SoilSensorService> _logger;
 
-        public SoilSensorService(IConfiguration configuration)
+        public SoilSensorService(MqttService mqttService, ILogger<SoilSensorService> logger)
         {
-            // 配置 HttpClient 支援 HTTPS（包含自簽憑證）
-            var handler = new HttpClientHandler()
-            {
-                ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true
-            };
-            
-            _httpClient = new HttpClient(handler)
-            {
-                Timeout = TimeSpan.FromSeconds(30) // 設定30秒超時
-            };
-            
-            _wateringRecords = new List<WateringRecord>();
-
-            // 使用主機名稱而不是 IP (HTTPS with port 443)
-            var baseUrl = configuration["SoilSensor:BaseUrl"] ?? "https://soil-sensor-pi.local:443";
-            _apiUrl = $"{baseUrl}/api/soil-data";
-            _gpioControlUrl = $"{baseUrl}/api/soil-data/gpio/control";
+            _mqttService = mqttService;
+            _logger = logger;
         }
 
-        public async Task<SoilData> GetSoilDataAsync()
+        // 取得最新的土壤數據 (從 MQTT 服務獲取)
+        public async Task<SoilData?> GetSoilDataAsync()
         {
             try
             {
-                var response = await _httpClient.GetAsync(_apiUrl);
-                response.EnsureSuccessStatusCode();
-                var currentData = await response.Content.ReadFromJsonAsync<SoilData>();
-                
-                // 檢測澆水行為
-                if (currentData != null)
+                var latestData = _mqttService.GetLatestSoilData();
+                if (latestData != null)
                 {
-                    CheckForWateringActivity(currentData);
-                    
-                    // 檢查是否需要自動澆水
-                    await CheckAutoWateringAsync(currentData);
-                    
-                    _lastSoilData = currentData;
+                    return latestData;
                 }
-                
-                return currentData;
+
+                // 如果沒有最新數據，請求即時讀數
+                await _mqttService.SendCommandAsync("GET_READING");
+
+                // 等待一段時間讓感測器回應
+                await Task.Delay(1000);
+
+                return _mqttService.GetLatestSoilData();
             }
             catch (Exception ex)
             {
-                // 在實際應用中應該適當處理錯誤
-                Console.WriteLine($"Error: {ex.Message}");
+                _logger.LogError(ex, "取得土壤數據時發生錯誤");
                 return null;
             }
         }
 
+        // GPIO 控制 (透過 MQTT 指令)
         public async Task<bool> ControlGPIOAsync(bool state)
         {
             try
             {
-                var content = new StringContent(
-                    JsonSerializer.Serialize(new { state = state }),
-                    System.Text.Encoding.UTF8,
-                    "application/json");
-
-                var response = await _httpClient.PostAsync(_gpioControlUrl, content);
-                response.EnsureSuccessStatusCode();
-
-                Debug.WriteLine( $"Response Content : {response.Content} ");
-
-                var result = await response.Content.ReadFromJsonAsync<GPIOResponse>();
-                return result?.success ?? false;
+                string command = state ? "GPIO_ON" : "GPIO_OFF";
+                return await _mqttService.SendCommandAsync(command);
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"GPIO Control Error: {ex.Message}");
+                _logger.LogError(ex, $"GPIO 控制失敗: {state}");
                 return false;
             }
         }
 
-        // 新增澆水方法（開啟1秒後關閉）
+        // 澆水操作 (透過 MQTT 服務)
         public async Task<bool> WaterPlantAsync()
         {
             try
             {
-                // 記錄澆水前的濕度
-                var beforeMoisture = _lastSoilData?.Moisture ?? 0;
-                
-                // 開啟水閥
-                Debug.WriteLine($"開啟水閥");
-                await ControlGPIOAsync(true);
-
-                // 等待1秒
-                await Task.Delay(1000);
-
-                // 關閉水閥
-                var result = await ControlGPIOAsync(false);
-                
-                // 記錄手動澆水
-                if (result)
-                {
-                    var wateringRecord = new WateringRecord
-                    {
-                        WateringTime = DateTime.Now,
-                        MoistureBefore = beforeMoisture,
-                        MoistureAfter = 0, // 將在下次讀取時更新
-                        MoistureChange = 0,
-                        Type = WateringType.Manual
-                    };
-                    
-                    _wateringRecords.Add(wateringRecord);
-                    Debug.WriteLine($"記錄手動澆水: {wateringRecord.WateringTime}");
-                }
-                
-                return result;
+                return await _mqttService.WaterPlantAsync();
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Watering Error: {ex.Message}");
+                _logger.LogError(ex, "澆水操作失敗");
                 return false;
             }
         }
 
-        // 檢測澆水活動
-        private void CheckForWateringActivity(SoilData currentData)
-        {
-            if (_lastSoilData == null) return;
-            
-            var moistureChange = currentData.Moisture - _lastSoilData.Moisture;
-            const float wateringThreshold = 10.0f; // 濕度變化閾值
-            
-            // 如果濕度大幅增加，判定為澆水行為
-            if (moistureChange >= wateringThreshold)
-            {
-                // 檢查是否是手動澆水後的更新
-                var lastManualWatering = _wateringRecords
-                    .Where(r => r.Type == WateringType.Manual && r.MoistureAfter == 0)
-                    .OrderByDescending(r => r.WateringTime)
-                    .FirstOrDefault();
-                
-                if (lastManualWatering != null && 
-                    DateTime.Now - lastManualWatering.WateringTime <= TimeSpan.FromMinutes(5))
-                {
-                    // 更新手動澆水記錄
-                    lastManualWatering.MoistureAfter = currentData.Moisture;
-                    lastManualWatering.MoistureChange = moistureChange;
-                    Debug.WriteLine($"更新手動澆水記錄: 濕度變化 {moistureChange}%");
-                }
-                else
-                {
-                    // 新增檢測到的澆水記錄
-                    var wateringRecord = new WateringRecord
-                    {
-                        WateringTime = DateTime.Now,
-                        MoistureBefore = _lastSoilData.Moisture,
-                        MoistureAfter = currentData.Moisture,
-                        MoistureChange = moistureChange,
-                        Type = WateringType.Detected
-                    };
-                    
-                    _wateringRecords.Add(wateringRecord);
-                    Debug.WriteLine($"檢測到澆水行為: 濕度從 {_lastSoilData.Moisture}% 增加到 {currentData.Moisture}%");
-                }
-            }
-        }
-
-        // 檢查自動澆水
-        private async Task CheckAutoWateringAsync(SoilData currentData)
-        {
-            if (!_autoWateringEnabled) return;
-            
-            // 檢查濕度是否低於閾值
-            if (currentData.Moisture >= _moistureThreshold) return;
-            
-            // 檢查冷卻時間
-            var timeSinceLastWatering = DateTime.Now - _lastAutoWateringTime;
-            if (timeSinceLastWatering < TimeSpan.FromMinutes(_autoWateringCooldownMinutes))
-            {
-                Debug.WriteLine($"自動澆水冷卻中，還需等待 {_autoWateringCooldownMinutes - timeSinceLastWatering.TotalMinutes:F1} 分鐘");
-                return;
-            }
-            
-            Debug.WriteLine($"觸發自動澆水: 濕度 {currentData.Moisture}% < {_moistureThreshold}%");
-            
-            try
-            {
-                // 執行自動澆水
-                var success = await PerformAutoWateringAsync(currentData.Moisture);
-                
-                if (success)
-                {
-                    _lastAutoWateringTime = DateTime.Now;
-                    Debug.WriteLine($"自動澆水成功，下次可澆水時間: {_lastAutoWateringTime.AddMinutes(_autoWateringCooldownMinutes)}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"自動澆水錯誤: {ex.Message}");
-            }
-        }
-
-        // 執行自動澆水
-        private async Task<bool> PerformAutoWateringAsync(float beforeMoisture)
+        // 取得系統狀態
+        public async Task<bool> GetSystemStatusAsync()
         {
             try
             {
-                // 開啟水閥
-                Debug.WriteLine("自動澆水: 開啟水閥");
-                await ControlGPIOAsync(true);
-
-                // 等待1秒
-                await Task.Delay(1000);
-
-                // 關閉水閥
-                var result = await ControlGPIOAsync(false);
-                
-                // 記錄自動澆水
-                if (result)
-                {
-                    var wateringRecord = new WateringRecord
-                    {
-                        WateringTime = DateTime.Now,
-                        MoistureBefore = beforeMoisture,
-                        MoistureAfter = 0, // 將在下次讀取時更新
-                        MoistureChange = 0,
-                        Type = WateringType.Automatic
-                    };
-                    
-                    _wateringRecords.Add(wateringRecord);
-                    Debug.WriteLine($"記錄自動澆水: {wateringRecord.WateringTime}");
-                }
-                
-                return result;
+                return await _mqttService.SendCommandAsync("GET_STATUS");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"自動澆水執行錯誤: {ex.Message}");
+                _logger.LogError(ex, "取得系統狀態失敗");
                 return false;
             }
         }
-
-        // 設定自動澆水狀態
-        public void SetAutoWateringEnabled(bool enabled)
-        {
-            _autoWateringEnabled = enabled;
-            Debug.WriteLine($"自動澆水功能: {(enabled ? "開啟" : "關閉")}");
-        }
-
-        // 取得自動澆水狀態
-        public bool GetAutoWateringEnabled()
-        {
-            return _autoWateringEnabled;
-        }
-
-        // 取得自動澆水設定資訊
-        public object GetAutoWateringSettings()
-        {
-            return new
-            {
-                enabled = _autoWateringEnabled,
-                moistureThreshold = _moistureThreshold,
-                cooldownMinutes = _autoWateringCooldownMinutes,
-                lastAutoWateringTime = _lastAutoWateringTime,
-                nextAvailableTime = _lastAutoWateringTime.AddMinutes(_autoWateringCooldownMinutes)
-            };
-        }
-
-        // 取得澆水記錄
-        public List<WateringRecord> GetWateringRecords()
-        {
-            return _wateringRecords
-                .OrderByDescending(r => r.WateringTime)
-                .Take(50) // 只返回最近50筆記錄
-                .ToList();
-        }
-
     }
+
+    // 保留原有的 GPIOResponse 類別以保持相容性
     public class GPIOResponse
     {
         public bool success { get; set; }
-        public string message { get; set; }
+        public string message { get; set; } = string.Empty;
         public bool state { get; set; }
     }
 }
