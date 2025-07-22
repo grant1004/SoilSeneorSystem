@@ -26,7 +26,10 @@ namespace SoilSensorCapture.Models
             // 將時間戳轉換為 Unix timestamp (秒)
             if (DateTime.TryParse(Timestamp, out DateTime dt))
             {
-                var unixTimestamp = ((DateTimeOffset)dt).ToUnixTimeSeconds();
+                // 明確指定為 UTC 時間，避免時區轉換問題
+                var utcDateTime = dt.Kind == DateTimeKind.Unspecified ? 
+                    DateTime.SpecifyKind(dt, DateTimeKind.Utc) : dt.ToUniversalTime();
+                var unixTimestamp = ((DateTimeOffset)utcDateTime).ToUnixTimeSeconds();
                 return new
                 {
                     voltage = Voltage,

@@ -728,9 +728,17 @@
                 document.getElementById('voltage').textContent = data.voltage.toFixed(4);
                 document.getElementById('moisture').textContent = data.moisture.toFixed(2);
                 
-                // 更新時間顯示
+                // 更新時間顯示 - timestamp 已經是 UTC，直接轉換為本地時間顯示
                 const date = new Date(data.timestamp * 1000);
-                document.getElementById('lastUpdate').textContent = `最後更新：${date.toLocaleString('zh-TW')}`;
+                document.getElementById('lastUpdate').textContent = `最後更新：${date.toLocaleString('zh-TW', {
+                    timeZone: 'Asia/Taipei',
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                })}`;
                 
                 // 更新濕度狀態
                 updateMoistureStatus(data.moisture);
