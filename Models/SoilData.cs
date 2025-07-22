@@ -26,9 +26,18 @@ namespace SoilSensorCapture.Models
             // 將時間戳轉換為 Unix timestamp (秒)
             if (DateTime.TryParse(Timestamp, out DateTime dt))
             {
-                // 明確指定為 UTC 時間，避免時區轉換問題
-                var utcDateTime = dt.Kind == DateTimeKind.Unspecified ? 
-                    DateTime.SpecifyKind(dt, DateTimeKind.Utc) : dt.ToUniversalTime();
+                DateTime utcDateTime;
+
+                if (dt.Kind == DateTimeKind.Unspecified)
+                {
+                    // 將無時區信息的時間視為本地時間，然後轉換為 UTC
+                    utcDateTime = DateTime.SpecifyKind(dt, DateTimeKind.Local).ToUniversalTime();
+                }
+                else
+                {
+                    utcDateTime = dt.ToUniversalTime();
+                }
+
                 var unixTimestamp = ((DateTimeOffset)utcDateTime).ToUnixTimeSeconds();
                 return new
                 {
