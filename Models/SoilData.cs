@@ -26,11 +26,12 @@ namespace SoilSensorCapture.Models
             // 將時間戳轉換為 Unix timestamp (秒)
             if (DateTime.TryParse(Timestamp, out DateTime dt))
             {
+                long unixTimestamp = ((DateTimeOffset)dt).ToUnixTimeSeconds();
                 return new
                 {
                     voltage = Voltage,
                     moisture = Moisture,
-                    timestamp = dt.ToString("yyyy-MM-dd HH:mm:ss"),
+                    timestamp = unixTimestamp,
                     gpio_status = GpioStatus
                 };
             }
