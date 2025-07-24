@@ -731,7 +731,6 @@
                 // 更新時間顯示 - timestamp 已經是 UTC，直接轉換為本地時間顯示
                 const date = new Date(data.timestamp * 1000);
                 document.getElementById('lastUpdate').textContent = `最後更新：${date.toLocaleString('zh-TW', {
-                    timeZone: 'Asia/Taipei',
                     year: 'numeric',
                     month: '2-digit',
                     day: '2-digit',
