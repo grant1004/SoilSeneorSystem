@@ -44,6 +44,11 @@ app.MapGet("/api/status", () => new {
     environment = app.Environment.EnvironmentName
 });
 
+// MQTT 診斷端點
+app.MapGet("/api/mqtt/diagnostics", (MqttService mqttService) => {
+    return mqttService.GetDiagnosticInfo();
+});
+
 // 設定 SignalR Hub 路由
 app.MapHub<SoilDataHub>("/soilDataHub");
 

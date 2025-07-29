@@ -33,6 +33,18 @@ namespace SoilSensorCapture.Services
         private readonly TimeSpan _dataRetentionPeriod = TimeSpan.FromHours(12);
         private readonly object _dataLock = new object();
         private Timer? _dataCleanupTimer;
+        
+        // 連線狀態監控
+        private Timer? _connectionHealthTimer;
+        private DateTime _lastMessageTime = DateTime.UtcNow;
+        private readonly object _connectionLock = new object();
+        private volatile bool _isReconnecting = false;
+        
+        // 診斷資訊
+        private DateTime _serviceStartTime = DateTime.UtcNow;
+        private int _reconnectAttempts = 0;
+        private DateTime _lastReconnectTime = DateTime.MinValue;
+        private string _lastDisconnectReason = string.Empty;
 
         public MqttService(
             ILogger<MqttService> logger,
@@ -60,7 +72,9 @@ namespace SoilSensorCapture.Services
                 .WithTcpServer(brokerHost, brokerPort)
                 .WithClientId(clientId)
                 .WithCleanSession(true)
-                .WithKeepAlivePeriod(TimeSpan.FromSeconds(60))
+                .WithKeepAlivePeriod(TimeSpan.FromSeconds(30))
+                .WithTimeout(TimeSpan.FromSeconds(10))
+                .WithAutomaticReconnect(TimeSpan.FromSeconds(5))
                 .Build();
 
             // 設定事件處理器
@@ -76,6 +90,10 @@ namespace SoilSensorCapture.Services
                 // 啟動數據清理定時器 (每10分鐘清理一次過期數據)
                 _dataCleanupTimer = new Timer(CleanOldData, null, TimeSpan.Zero, TimeSpan.FromMinutes(10));
                 _logger.LogInformation("🧹 歷史數據清理定時器已啟動");
+                
+                // 啟動連線健康檢查定時器 (每30秒檢查一次)
+                _connectionHealthTimer = new Timer(CheckConnectionHealth, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+                _logger.LogInformation("💓 連線健康檢查定時器已啟動");
             }
             catch (Exception ex)
             {
@@ -88,8 +106,9 @@ namespace SoilSensorCapture.Services
         {
             _logger.LogInformation("正在停止 MQTT 服務...");
 
-            // 停止清理定時器
+            // 停止所有定時器
             _dataCleanupTimer?.Dispose();
+            _connectionHealthTimer?.Dispose();
 
             if (_mqttClient?.IsConnected == true)
             {
@@ -127,27 +146,15 @@ namespace SoilSensorCapture.Services
 
         private Task OnDisconnectedAsync(MqttClientDisconnectedEventArgs args)
         {
-            _logger.LogWarning("🔌 MQTT 客戶端已斷線");
+            _lastDisconnectReason = $"{args.Reason} - {args.ReasonString}";
+            
+            _logger.LogWarning($"🔌 MQTT 客戶端已斷線: {_lastDisconnectReason}");
+            _logger.LogInformation($"📊 斷線診斷 - 服務運行時間: {DateTime.UtcNow - _serviceStartTime:hh\\:mm\\:ss}, 重連次數: {_reconnectAttempts}");
 
-            // 如果不是正常斷線，嘗試重連
-            if (!args.ClientWasConnected)
+            // 觸發重連機制 (除了正常關閉的情況)
+            if (args.Reason != MqttClientDisconnectReason.NormalDisconnection)
             {
-                _logger.LogInformation("🔄 嘗試重新連接...");
-                Task.Run(async () =>
-                {
-                    await Task.Delay(5000); // 等待 5 秒後重連
-                    try
-                    {
-                        if (_mqttClient != null && !_mqttClient.IsConnected)
-                        {
-                            await _mqttClient.ConnectAsync(_options!);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "重新連接失敗");
-                    }
-                });
+                _ = Task.Run(() => AttemptReconnectAsync());
             }
 
             return Task.CompletedTask;
@@ -157,6 +164,12 @@ namespace SoilSensorCapture.Services
         {
             try
             {
+                // 更新最後收到訊息的時間
+                lock (_connectionLock)
+                {
+                    _lastMessageTime = DateTime.UtcNow;
+                }
+
                 var topic = args.ApplicationMessage.Topic;
                 var payload = Encoding.UTF8.GetString(args.ApplicationMessage.PayloadSegment);
 
@@ -354,9 +367,142 @@ namespace SoilSensorCapture.Services
             }
         }
 
+        // 重連方法
+        private async Task AttemptReconnectAsync()
+        {
+            lock (_connectionLock)
+            {
+                if (_isReconnecting)
+                {
+                    _logger.LogDebug("已有重連程序在進行中，跳過此次重連");
+                    return;
+                }
+                _isReconnecting = true;
+            }
+
+            try
+            {
+                _reconnectAttempts++;
+                _lastReconnectTime = DateTime.UtcNow;
+                
+                _logger.LogInformation($"🔄 開始重新連接 MQTT... (第 {_reconnectAttempts} 次)");
+                
+                var retryCount = 0;
+                var maxRetries = 5;
+                var retryDelay = TimeSpan.FromSeconds(5);
+
+                while (retryCount < maxRetries && (_mqttClient?.IsConnected != true))
+                {
+                    try
+                    {
+                        retryCount++;
+                        _logger.LogInformation($"🔄 重連嘗試 {retryCount}/{maxRetries}");
+
+                        if (_mqttClient != null && !_mqttClient.IsConnected)
+                        {
+                            await _mqttClient.ConnectAsync(_options!);
+                            _logger.LogInformation("✅ MQTT 重新連線成功");
+                            break;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, $"❌ 重連嘗試 {retryCount} 失敗");
+                        
+                        if (retryCount < maxRetries)
+                        {
+                            await Task.Delay(retryDelay);
+                            retryDelay = TimeSpan.FromSeconds(Math.Min(retryDelay.TotalSeconds * 2, 60)); // 指數退避，最大60秒
+                        }
+                    }
+                }
+
+                if (_mqttClient?.IsConnected != true)
+                {
+                    _logger.LogError($"❌ 經過 {maxRetries} 次嘗試後仍無法重新連接 MQTT");
+                }
+            }
+            finally
+            {
+                lock (_connectionLock)
+                {
+                    _isReconnecting = false;
+                }
+            }
+        }
+
+        // 連線健康檢查
+        private void CheckConnectionHealth(object? state)
+        {
+            try
+            {
+                DateTime lastMessage;
+                lock (_connectionLock)
+                {
+                    lastMessage = _lastMessageTime;
+                }
+
+                var timeSinceLastMessage = DateTime.UtcNow - lastMessage;
+                var isConnected = _mqttClient?.IsConnected == true;
+
+                // 如果超過2分鐘沒收到訊息且顯示為連線狀態，可能是殭屍連線
+                if (timeSinceLastMessage > TimeSpan.FromMinutes(2) && isConnected)
+                {
+                    _logger.LogWarning($"⚠️ 疑似殭屍連線: 已 {timeSinceLastMessage.TotalMinutes:F1} 分鐘未收到訊息，嘗試重連");
+                    _ = Task.Run(() => AttemptReconnectAsync());
+                }
+                // 如果連線狀態顯示斷線，嘗試重連
+                else if (!isConnected)
+                {
+                    _logger.LogWarning("⚠️ 檢測到 MQTT 未連線，嘗試重連");
+                    _ = Task.Run(() => AttemptReconnectAsync());
+                }
+                else
+                {
+                    _logger.LogDebug($"💓 MQTT 連線健康 (最後訊息: {timeSinceLastMessage.TotalSeconds:F0}秒前)");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "連線健康檢查時發生錯誤");
+            }
+        }
+
+        // 取得診斷資訊
+        public object GetDiagnosticInfo()
+        {
+            lock (_connectionLock)
+            {
+                return new
+                {
+                    ServiceStartTime = _serviceStartTime,
+                    ServiceUptime = DateTime.UtcNow - _serviceStartTime,
+                    IsConnected = _mqttClient?.IsConnected ?? false,
+                    LastMessageTime = _lastMessageTime,
+                    TimeSinceLastMessage = DateTime.UtcNow - _lastMessageTime,
+                    ReconnectAttempts = _reconnectAttempts,
+                    LastReconnectTime = _lastReconnectTime == DateTime.MinValue ? (DateTime?)null : _lastReconnectTime,
+                    LastDisconnectReason = string.IsNullOrEmpty(_lastDisconnectReason) ? "無" : _lastDisconnectReason,
+                    IsReconnecting = _isReconnecting,
+                    HistoricalDataCount = _historicalData.Count,
+                    HasLatestData = _latestSoilData != null,
+                    PlatformInfo = new
+                    {
+                        Environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
+                        Port = Environment.GetEnvironmentVariable("PORT"),
+                        MachineName = Environment.MachineName,
+                        ProcessId = Environment.ProcessId,
+                        WorkingSet = Environment.WorkingSet,
+                        TickCount = Environment.TickCount64
+                    }
+                };
+            }
+        }
+
         public void Dispose()
         {
             _dataCleanupTimer?.Dispose();
+            _connectionHealthTimer?.Dispose();
             _mqttClient?.Dispose();
         }
     }
