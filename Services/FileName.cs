@@ -74,7 +74,6 @@ namespace SoilSensorCapture.Services
                 .WithCleanSession(true)
                 .WithKeepAlivePeriod(TimeSpan.FromSeconds(30))
                 .WithTimeout(TimeSpan.FromSeconds(10))
-                .WithAutomaticReconnect(TimeSpan.FromSeconds(5))
                 .Build();
 
             // 設定事件處理器
@@ -152,7 +151,7 @@ namespace SoilSensorCapture.Services
             _logger.LogInformation($"📊 斷線診斷 - 服務運行時間: {DateTime.UtcNow - _serviceStartTime:hh\\:mm\\:ss}, 重連次數: {_reconnectAttempts}");
 
             // 觸發重連機制 (除了正常關閉的情況)
-            if (args.Reason != MqttClientDisconnectReason.NormalDisconnection)
+            if (args.Reason.ToString() != "NormalDisconnection")
             {
                 _ = Task.Run(() => AttemptReconnectAsync());
             }
