@@ -20,10 +20,10 @@ namespace SoilSensorCapture.Services
         private MqttClientOptions? _options;
 
         // MQTT 主題常數
-        private const string TOPIC_DATA = "soilsensorcapture/data";
-        private const string TOPIC_COMMAND = "soilsensorcapture/command";
-        private const string TOPIC_STATUS = "soilsensorcapture/status";
-        private const string TOPIC_RESPONSE = "soilsensorcapture/response";
+        private const string TOPIC_DATA = "soilsensorcapture/esp/data";
+        private const string TOPIC_COMMAND = "soilsensorcapture/esp/command";
+        private const string TOPIC_STATUS = "soilsensorcapture/esp/status";
+        private const string TOPIC_RESPONSE = "soilsensorcapture/esp/response";
 
         // 最新的土壤數據
         private SoilData? _latestSoilData;
