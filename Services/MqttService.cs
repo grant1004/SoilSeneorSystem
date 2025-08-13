@@ -72,8 +72,8 @@ namespace SoilSensorCapture.Services
                 .WithTcpServer(brokerHost, brokerPort)
                 .WithClientId(clientId)
                 .WithCleanSession(true)
-                .WithKeepAlivePeriod(TimeSpan.FromSeconds(30))
-                .WithTimeout(TimeSpan.FromSeconds(10))
+                .WithKeepAlivePeriod(TimeSpan.FromSeconds(60))
+                .WithTimeout(TimeSpan.FromSeconds(30))
                 .Build();
 
             // 設定事件處理器
@@ -90,8 +90,8 @@ namespace SoilSensorCapture.Services
                 _dataCleanupTimer = new Timer(CleanOldData, null, TimeSpan.Zero, TimeSpan.FromMinutes(10));
                 _logger.LogInformation("🧹 歷史數據清理定時器已啟動");
                 
-                // 啟動連線健康檢查定時器 (每30秒檢查一次)
-                _connectionHealthTimer = new Timer(CheckConnectionHealth, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+                // 啟動連線健康檢查定時器 (每90秒檢查一次)
+                _connectionHealthTimer = new Timer(CheckConnectionHealth, null, TimeSpan.FromSeconds(90), TimeSpan.FromSeconds(90));
                 _logger.LogInformation("💓 連線健康檢查定時器已啟動");
             }
             catch (Exception ex)
@@ -151,7 +151,8 @@ namespace SoilSensorCapture.Services
             _logger.LogInformation($"📊 斷線診斷 - 服務運行時間: {DateTime.UtcNow - _serviceStartTime:hh\\:mm\\:ss}, 重連次數: {_reconnectAttempts}");
 
             // 觸發重連機制 (除了正常關閉的情況)
-            if (args.Reason.ToString() != "NormalDisconnection")
+            if (args.Reason != MQTTnet.Client.MqttClientDisconnectReason.NormalDisconnection && 
+                args.Reason != MQTTnet.Client.MqttClientDisconnectReason.DisconnectedByClient)
             {
                 _ = Task.Run(() => AttemptReconnectAsync());
             }
@@ -444,8 +445,8 @@ namespace SoilSensorCapture.Services
                 var timeSinceLastMessage = DateTime.UtcNow - lastMessage;
                 var isConnected = _mqttClient?.IsConnected == true;
 
-                // 如果超過2分鐘沒收到訊息且顯示為連線狀態，可能是殭屍連線
-                if (timeSinceLastMessage > TimeSpan.FromMinutes(2) && isConnected)
+                // 如果超過3分鐘沒收到訊息且顯示為連線狀態，可能是殭屍連線
+                if (timeSinceLastMessage > TimeSpan.FromMinutes(3) && isConnected)
                 {
                     _logger.LogWarning($"⚠️ 疑似殭屍連線: 已 {timeSinceLastMessage.TotalMinutes:F1} 分鐘未收到訊息，嘗試重連");
                     _ = Task.Run(() => AttemptReconnectAsync());
