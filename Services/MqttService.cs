@@ -127,12 +127,13 @@ namespace SoilSensorCapture.Services
             {
                 new MqttTopicFilterBuilder().WithTopic(TOPIC_DATA).WithQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce).Build(),
                 new MqttTopicFilterBuilder().WithTopic(TOPIC_STATUS).WithQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce).Build(),
-                new MqttTopicFilterBuilder().WithTopic(TOPIC_RESPONSE).WithQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce).Build()
+                new MqttTopicFilterBuilder().WithTopic(TOPIC_RESPONSE).WithQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce).Build(),
+                new MqttTopicFilterBuilder().WithTopic(TOPIC_COMMAND).WithQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce).Build()
             };
 
             //await _mqttClient!.SubscribeAsync(subscriptions);
             Subscribe(subscriptions);
-            _logger.LogInformation($"📡 已訂閱主題: {TOPIC_DATA}, {TOPIC_STATUS}, {TOPIC_RESPONSE}");
+            _logger.LogInformation($"📡 已訂閱主題: {TOPIC_DATA}, {TOPIC_STATUS}, {TOPIC_RESPONSE}, {TOPIC_COMMAND}");
         }
 
         public MqttClientSubscribeResult Subscribe(params MqttTopicFilter[] topicFilters)
@@ -184,6 +185,9 @@ namespace SoilSensorCapture.Services
                         break;
                     case TOPIC_RESPONSE:
                         await HandleResponseMessage(payload);
+                        break;
+                    case TOPIC_COMMAND:
+                        await HandleCommandMessage(payload);
                         break;
                 }
             }
@@ -248,6 +252,31 @@ namespace SoilSensorCapture.Services
             // 處理指令回應
             await _hubContext.Clients.All.SendAsync("ReceiveCommandResponse", payload);
             _logger.LogDebug($"💬 指令回應已推送: {payload}");
+        }
+
+        private async Task HandleCommandMessage(string payload)
+        {
+            try
+            {
+                _logger.LogInformation($"📨 收到指令: {payload}");
+
+                var command = payload.Trim();
+                switch (command.ToUpper())
+                {
+                    case "WATER":
+                    case "澆水":
+                        _logger.LogInformation($"🚿 收到澆水指令 ({command})，開始執行澆水");
+                        await WaterPlantAsync();
+                        break;
+                    default:
+                        _logger.LogDebug($"🤷 未知指令: {payload}");
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"處理指令時發生錯誤: {payload}");
+            }
         }
 
         // 發送 MQTT 指令
@@ -350,8 +379,8 @@ namespace SoilSensorCapture.Services
                 bool onResult = await SendCommandAsync("GPIO_ON");
                 if (!onResult) return false;
 
-                // 等待 1 秒
-                await Task.Delay(1000);
+                // 等待 1.5 秒
+                await Task.Delay(1500);
 
                 // 關閉水閥
                 bool offResult = await SendCommandAsync("GPIO_OFF");
